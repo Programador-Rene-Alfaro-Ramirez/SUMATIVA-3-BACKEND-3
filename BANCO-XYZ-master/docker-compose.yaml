@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # 1. Broker de Mensajería (JMS / ActiveMQ)
+  activemq:
+    image: symptoma/activemq:latest
+    container_name: activemq
+    ports:
+      - "61616:61616"
+      - "8161:8161"
+    networks:
+      - banco-network
+
+  # 2. Servidor de Descubrimiento
+  eureka-server:
+    image: localhost/eureka-server:v1
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    networks:
+      - banco-network
+
+  # 3. Servidor de Configuración
+  config-server:
+    image: localhost/config-server:v1
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    depends_on:
+      - eureka-server
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    networks:
+      - banco-network
+
+  # 4. Microservicio de Bancos
+  banco-service:
+    image: localhost/banco-service:v1
+    container_name: banco-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - eureka-server
+      - config-server
+      - activemq
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_URI=http://config-server:8888
+      - SPRING_ACTIVEMQ_BROKER_URL=tcp://activemq:61616
+    volumes:
+      - ./data:/bank_legacy_data/data
+    networks:
+      - banco-network
+
+  # 5. Microservicio de Cuentas
+  cuenta-service:
+    image: localhost/cuenta-service:v1
+    container_name: cuenta-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - eureka-server
+      - config-server
+      - activemq
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_URI=http://config-server:8888
+      - SPRING_ACTIVEMQ_BROKER_URL=tcp://activemq:61616
+    volumes:
+      - ./data:/bank_legacy_data/data
+    networks:
+      - banco-network
+
+  # 6. Microservicio de Transacciones
+  transaccion-service:
+    image: localhost/transaccion-service:v1
+    container_name: transaccion-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      - eureka-server
+      - config-server
+      - activemq
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_URI=http://config-server:8888
+      - SPRING_ACTIVEMQ_BROKER_URL=tcp://activemq:61616
+    volumes:
+      - ./data:/bank_legacy_data/data
+    networks:
+      - banco-network
+
+networks:
+  banco-network:
+    driver: bridge
