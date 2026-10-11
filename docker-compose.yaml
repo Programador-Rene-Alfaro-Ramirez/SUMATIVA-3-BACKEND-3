@@ -1,0 +1,126 @@
+version: '3.8'
+
+services:
+  # 1. Zookeeper (Requerido por Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - banco-network
+
+  # 2. Broker de Mensajería Asíncrona (Apache Kafka)
+  kafka:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - banco-network
+
+  # 3. Servidor de Autorización (Keycloak para OAuth2)
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: keycloak
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    command: start-dev
+    ports:
+      - "8080:8080"
+    networks:
+      - banco-network
+
+  # 4. Servidor de Descubrimiento
+  eureka-server:
+    image: localhost/eureka-server:v1
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    networks:
+      - banco-network
+
+  # 5. Servidor de Configuración
+  config-server:
+    image: localhost/config-server:v1
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    depends_on:
+      - eureka-server
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    networks:
+      - banco-network
+
+  # 6. Microservicio de Bancos
+  banco-service:
+    image: localhost/banco-service:v1
+    container_name: banco-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - eureka-server
+      - config-server
+      - kafka
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_URI=http://config-server:8888
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    volumes:
+      - ./data:/bank_legacy_data/data
+    networks:
+      - banco-network
+
+  # 7. Microservicio de Cuentas
+  cuenta-service:
+    image: localhost/cuenta-service:v1
+    container_name: cuenta-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - eureka-server
+      - config-server
+      - kafka
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_URI=http://config-server:8888
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    volumes:
+      - ./data:/bank_legacy_data/data
+    networks:
+      - banco-network
+
+  # 8. Microservicio de Transacciones
+  transaccion-service:
+    image: localhost/transaccion-service:v1
+    container_name: transaccion-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      - eureka-server
+      - config-server
+      - kafka
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_URI=http://config-server:8888
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+    volumes:
+      - ./data:/bank_legacy_data/data
+    networks:
+      - banco-network
+
+networks:
+  banco-network:
+    driver: bridge
